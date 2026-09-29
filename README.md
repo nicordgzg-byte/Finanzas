@@ -1,6 +1,6 @@
 # Mis Finanzas
 
-App sencilla para llevar tus finanzas personales: ingresos, egresos, balance actual, fondos de ahorro (con cálculo de cuántos meses cubre tu fondo de emergencia) y deudas con abonos. Funciona en el celular y se puede instalar en la pantalla de inicio.
+App sencilla para llevar tus finanzas personales: ingresos, egresos, balance actual, saldo por cuenta (efectivo o bancos), fondos de ahorro (con cálculo de cuántos meses cubre tu fondo de emergencia) y deudas con abonos. Funciona en el celular y se puede instalar en la pantalla de inicio.
 
 - **Código:** GitHub
 - **Publicación:** Vercel (sitio estático, sin paso de compilación)
@@ -16,6 +16,7 @@ App sencilla para llevar tus finanzas personales: ingresos, egresos, balance act
 | `config.js` | URL y anon key de tu proyecto de Supabase |
 | `supabase/schema.sql` | Tablas `movimientos`, `deudas` y `fondos` con sus reglas de seguridad |
 | `supabase/fondos.sql` | Solo la tabla `fondos`, para proyectos que ya tenían las otras dos |
+| `supabase/cuentas.sql` | Agrega la columna `cuenta` a `movimientos` (Efectivo, BBVA, etc.) |
 | `manifest.webmanifest`, `icons/` | Ícono y datos para instalarla en el celular |
 
 ## Puesta en marcha

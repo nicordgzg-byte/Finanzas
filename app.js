@@ -27,12 +27,38 @@ const sb = window.supabase.createClient(new URL(cfg.SUPABASE_URL).origin, cfg.SU
 });
 
 let movs = [], deudas = [], fondos = [], fondosOk = true, loaded = false, user = null;
-let filtroTipo = "todos", filtroMes = "todos", tipoNuevo = "egreso", tab = "resumen";
+let filtroTipo = "todos", filtroMes = "todos", filtroCuenta = "todas", tipoNuevo = "egreso", tab = "resumen";
+const SIN_CUENTA = "Sin cuenta";
+
+/* Cuentas: se arman con lo que ya usaste, las más usadas primero; "Efectivo" siempre aparece. */
+function cuentasConocidas() {
+  const n = {};
+  movs.forEach(m => { if (m.cuenta) n[m.cuenta] = (n[m.cuenta] || 0) + 1; });
+  const lista = Object.keys(n).sort((a, b) => n[b] - n[a] || a.localeCompare(b, "es"));
+  if (!lista.some(c => c.toLowerCase() === "efectivo")) lista.push("Efectivo");
+  return lista;
+}
+function ultimaCuenta() { try { return localStorage.getItem("ultimaCuenta") || ""; } catch (e) { return ""; } }
+function recordarCuenta(c) { try { if (c) localStorage.setItem("ultimaCuenta", c); } catch (e) {} }
+function limpiarCuenta(v) {
+  v = (v || "").trim().replace(/\s+/g, " ");
+  if (!v) return null;
+  const igual = cuentasConocidas().find(c => c.toLowerCase() === v.toLowerCase());
+  return igual || v;
+}
+function cuentaSelect(id) {
+  const ult = ultimaCuenta();
+  return `<select class="cuenta-sel" id="${id}" aria-label="Cuenta">${cuentasConocidas().map(c => `<option${c === ult ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
+}
 
 $("#today").textContent = (() => { const d = new Date(); return d.getDate() + " de " + MESES_L[d.getMonth()] + " de " + d.getFullYear(); })();
 
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 2400); }
-function fail(e) { console.error(e); toast("No se pudo guardar. Revisa tu conexión e inténtalo de nuevo."); }
+function fail(e) {
+  console.error(e);
+  toast(/cuenta/i.test(e?.message || "") ? "Falta correr supabase/cuentas.sql en Supabase para guardar la cuenta."
+    : "No se pudo guardar. Revisa tu conexión e inténtalo de nuevo.");
+}
 
 async function cargar() {
   const [a, b, c] = await Promise.all([
@@ -117,7 +143,7 @@ function rowHTML(m) {
   const inn = m.tipo === "ingreso";
   return `<li>
     <div class="dot ${inn ? "in" : "out"}" aria-hidden="true">${inn ? "+" : "−"}</div>
-    <div class="mv-main"><div class="c">${esc(m.concepto || m.categoria)}</div><div class="m">${esc(m.categoria)} · ${fDate(m.fecha)}</div></div>
+    <div class="mv-main"><div class="c">${esc(m.concepto || m.categoria)}</div><div class="m">${esc(m.categoria)}${m.cuenta ? " · " + esc(m.cuenta) : ""} · ${fDate(m.fecha)}</div></div>
     <div class="amt num ${inn ? "in" : "out"}">${inn ? "+" : "−"}${money(m.monto)}</div>
     <button class="del" data-del-mov="${esc(m.id)}" aria-label="Eliminar movimiento">Eliminar</button>
   </li>`;
@@ -153,7 +179,30 @@ function render() {
   const sel = $("#f-mes");
   if (sel.innerHTML !== opts) { sel.innerHTML = opts; if (!meses.includes(filtroMes)) filtroMes = "todos"; sel.value = filtroMes; }
 
-  const lst = movs.filter(m => (filtroTipo === "todos" || m.tipo === filtroTipo) && (filtroMes === "todos" || ym(m.fecha) === filtroMes));
+  // Filtro y lista de cuentas
+  const usadas = [...new Set(movs.map(m => m.cuenta || SIN_CUENTA))];
+  const ordenCuentas = cuentasConocidas().filter(c => usadas.includes(c));
+  if (usadas.includes(SIN_CUENTA)) ordenCuentas.push(SIN_CUENTA);
+  const optsC = `<option value="todas">Todas las cuentas</option>` + ordenCuentas.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  const selC = $("#f-cuenta");
+  if (selC.innerHTML !== optsC) { selC.innerHTML = optsC; if (!ordenCuentas.includes(filtroCuenta)) filtroCuenta = "todas"; selC.value = filtroCuenta; }
+  selC.hidden = ordenCuentas.length < 2 && !ordenCuentas.some(c => c !== SIN_CUENTA);
+  $("#cuentas-list").innerHTML = cuentasConocidas().map(c => `<option value="${esc(c)}"></option>`).join("");
+
+  const conCuenta = movs.some(m => m.cuenta);
+  $("#cuentas-block").hidden = !loaded || !conCuenta;
+  if (conCuenta) {
+    const saldos = ordenCuentas.map(c => {
+      const ms = movs.filter(m => (m.cuenta || SIN_CUENTA) === c);
+      return { c, n: ms.length, v: ms.reduce((s, m) => s + (m.tipo === "ingreso" ? m.monto : -m.monto), 0) };
+    });
+    $("#cuentas").innerHTML = saldos.map(x => `<div class="acc">
+      <span class="n">${esc(x.c)}<small>${x.n} movimiento${x.n === 1 ? "" : "s"}</small></span>
+      <span class="v num${x.v < 0 ? " neg" : ""}">${money(x.v)}</span></div>`).join("");
+  }
+
+  const lst = movs.filter(m => (filtroTipo === "todos" || m.tipo === filtroTipo) && (filtroMes === "todos" || ym(m.fecha) === filtroMes)
+    && (filtroCuenta === "todas" || (m.cuenta || SIN_CUENTA) === filtroCuenta));
   const fi = sum(lst, "ingreso"), fo = sum(lst, "egreso");
   $("#all-movs").innerHTML = !loaded ? `<div class="empty">Cargando…</div>` : lst.length
     ? `<div class="month-sum"><span>Ingresos <b class="num p">${money(fi)}</b></span><span>Egresos <b class="num n">${money(fo)}</b></span><span>Neto <b class="num">${money(fi - fo)}</b></span></div><ul class="list">${lst.map(rowHTML).join("")}</ul>`
@@ -221,7 +270,8 @@ function renderFondos() {
         <button class="btn sm ghost" type="submit" data-accion="retirar">Retirar</button>
       </form>
       <div class="fondo-foot">
-        <label class="chk-row muted"><input type="checkbox" id="fchk-${id}" checked> Reflejarlo en mi balance</label>
+        <label class="chk-row muted"><input type="checkbox" id="fchk-${id}" checked> Reflejarlo en mi balance, cuenta</label>
+        ${cuentaSelect("fcta-" + id)}
         <button class="del" data-del-fondo="${id}">Eliminar fondo</button>
       </div>
     </article>`;
@@ -255,7 +305,8 @@ function renderDebts(now) {
       ${rest > 0 ? `<form class="abono" data-abono="${id}">
         <input type="number" id="ab-${id}" step="0.01" min="0" inputmode="decimal" placeholder="Monto del abono" aria-label="Monto del abono">
         <button class="btn sm" type="submit">Abonar</button>
-        <label class="chk"><input type="checkbox" id="abchk-${id}" checked> Registrar también como egreso</label>
+        <label class="chk"><input type="checkbox" id="abchk-${id}" checked> Registrar también como egreso desde</label>
+        ${cuentaSelect("abcta-" + id)}
       </form>` : ""}
       <div class="debt-actions"><button class="del" data-del-deuda="${id}">Eliminar deuda</button></div>
     </article>`;
@@ -306,7 +357,7 @@ function setTipo(t) {
   $("#m-cat").innerHTML = CATS[t].map(c => `<option>${c}</option>`).join("");
 }
 function openSheet(kind, opts = {}) {
-  if (kind === "mov") { setTipo(tipoNuevo); $("#m-fecha").value = todayISO(); $("#m-err").textContent = ""; $("#sheet-mov").hidden = false; setTimeout(() => $("#m-monto").focus(), 50); }
+  if (kind === "mov") { setTipo(tipoNuevo); $("#m-fecha").value = todayISO(); $("#m-cuenta").value = ultimaCuenta(); $("#m-err").textContent = ""; $("#sheet-mov").hidden = false; setTimeout(() => $("#m-monto").focus(), 50); }
   else if (kind === "fondo") {
     const emerg = !!opts.emerg || !fondos.some(f => f.es_emergencia) && !fondos.length;
     $("#fo-err").textContent = "";
@@ -327,7 +378,10 @@ $("#form-mov").addEventListener("submit", async e => {
   e.preventDefault();
   const monto = round2(parseFloat($("#m-monto").value));
   if (!(monto > 0)) { $("#m-err").textContent = "Escribe un monto mayor a cero."; return; }
+  const cuenta = limpiarCuenta($("#m-cuenta").value);
   const row = { tipo: tipoNuevo, monto, concepto: $("#m-concepto").value.trim(), categoria: $("#m-cat").value, fecha: $("#m-fecha").value || todayISO() };
+  if (cuenta) row.cuenta = cuenta;
+  recordarCuenta(cuenta);
   closeSheets(); $("#m-monto").value = ""; $("#m-concepto").value = "";
   const { error } = await sb.from("movimientos").insert(row);
   if (error) return fail(error);
@@ -391,6 +445,7 @@ document.addEventListener("click", async e => {
   }
 });
 $("#f-mes").addEventListener("change", e => { filtroMes = e.target.value; render(); });
+$("#f-cuenta").addEventListener("change", e => { filtroCuenta = e.target.value; render(); });
 
 document.addEventListener("submit", async e => {
   const ff = e.target.closest("[data-fondo]");
@@ -406,9 +461,11 @@ document.addEventListener("submit", async e => {
     const up = await sb.from("fondos").update({ saldo: nuevo }).eq("id", fo.id);
     if (up.error) return fail(up.error);
     if (enBalance) {
+      const cuenta = ff.parentElement.querySelector("#fcta-" + CSS.escape(fo.id))?.value || null;
       const mov = accion === "aportar"
         ? { tipo: "egreso", monto: v, concepto: "Aportación a " + fo.nombre, categoria: "Ahorro", fecha: todayISO() }
         : { tipo: "ingreso", monto: v, concepto: "Retiro de " + fo.nombre, categoria: "Retiro de fondo", fecha: todayISO() };
+      if (cuenta) { mov.cuenta = cuenta; recordarCuenta(cuenta); }
       const ins = await sb.from("movimientos").insert(mov);
       if (ins.error) fail(ins.error);
     }
@@ -426,7 +483,10 @@ document.addEventListener("submit", async e => {
   const up = await sb.from("deudas").update({ pagado: round2(d.pagado + v) }).eq("id", d.id);
   if (up.error) return fail(up.error);
   if (asEgreso) {
-    const ins = await sb.from("movimientos").insert({ tipo: "egreso", monto: v, concepto: "Abono a " + d.acreedor, categoria: "Pago de deuda", fecha: todayISO() });
+    const cuenta = f.querySelector("#abcta-" + CSS.escape(d.id))?.value || null;
+    const mov = { tipo: "egreso", monto: v, concepto: "Abono a " + d.acreedor, categoria: "Pago de deuda", fecha: todayISO() };
+    if (cuenta) { mov.cuenta = cuenta; recordarCuenta(cuenta); }
+    const ins = await sb.from("movimientos").insert(mov);
     if (ins.error) fail(ins.error);
   }
   toast("Abono de " + money(v) + " registrado");

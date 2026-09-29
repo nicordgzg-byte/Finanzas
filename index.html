@@ -70,6 +70,11 @@
 
     <section class="block" id="emerg-block"></section>
 
+    <section class="block" id="cuentas-block" hidden>
+      <div class="block-head"><h2>Saldo por cuenta</h2></div>
+      <div class="panel" id="cuentas"></div>
+    </section>
+
     <section class="block">
       <div class="block-head"><h2>Últimos 6 meses</h2></div>
       <div class="panel">
@@ -97,6 +102,7 @@
       <button class="chip" data-f="ingreso" aria-pressed="false">Ingresos</button>
       <button class="chip" data-f="egreso" aria-pressed="false">Egresos</button>
       <select class="chip" id="f-mes" aria-label="Mes"></select>
+      <select class="chip" id="f-cuenta" aria-label="Cuenta"></select>
     </div>
     <div class="panel" id="all-movs"></div>
   </main>
@@ -137,6 +143,8 @@
     </div>
     <label class="field"><span>Monto (MXN)</span><input type="number" id="m-monto" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></label>
     <label class="field"><span>Concepto</span><input type="text" id="m-concepto" maxlength="80" placeholder="Ej. Súper, renta, sueldo"></label>
+    <label class="field"><span>Cuenta</span><input type="text" id="m-cuenta" list="cuentas-list" maxlength="40" autocomplete="off" placeholder="Efectivo, BBVA, Nu…"></label>
+    <datalist id="cuentas-list"></datalist>
     <div class="row2">
       <label class="field"><span>Categoría</span><select class="inp" id="m-cat"></select></label>
       <label class="field"><span>Fecha</span><input type="date" id="m-fecha"></label>

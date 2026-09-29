@@ -62,3 +62,6 @@ create policy "fondos propios" on public.fondos
   for all to authenticated
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Cuenta de cada movimiento (Efectivo, BBVA, Nu, etc.)
+alter table public.movimientos add column if not exists cuenta text;
