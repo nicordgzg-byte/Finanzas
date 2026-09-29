@@ -2,8 +2,8 @@
 "use strict";
 
 const CATS = {
-  ingreso: ["Sueldo", "Comisiones", "Ventas", "Rentas", "Inversiones", "Otro"],
-  egreso: ["Comida", "Súper", "Vivienda", "Servicios", "Transporte", "Salud", "Entretenimiento", "Pago de deuda", "Otro"]
+  ingreso: ["Sueldo", "Comisiones", "Ventas", "Rentas", "Inversiones", "Retiro de fondo", "Otro"],
+  egreso: ["Comida", "Súper", "Vivienda", "Servicios", "Transporte", "Salud", "Entretenimiento", "Pago de deuda", "Ahorro", "Otro"]
 };
 const fmt = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const money = n => fmt.format(n || 0);
@@ -22,11 +22,11 @@ if (!window.supabase || !cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes("TU-PROYE
   $("#config-notice").hidden = false;
   return;
 }
-const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+const sb = window.supabase.createClient(new URL(cfg.SUPABASE_URL).origin, cfg.SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true }
 });
 
-let movs = [], deudas = [], loaded = false, user = null;
+let movs = [], deudas = [], fondos = [], fondosOk = true, loaded = false, user = null;
 let filtroTipo = "todos", filtroMes = "todos", tipoNuevo = "egreso", tab = "resumen";
 
 $("#today").textContent = (() => { const d = new Date(); return d.getDate() + " de " + MESES_L[d.getMonth()] + " de " + d.getFullYear(); })();
@@ -35,15 +35,31 @@ function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = fal
 function fail(e) { console.error(e); toast("No se pudo guardar. Revisa tu conexión e inténtalo de nuevo."); }
 
 async function cargar() {
-  const [a, b] = await Promise.all([
+  const [a, b, c] = await Promise.all([
     sb.from("movimientos").select("*").order("fecha", { ascending: false }).order("created_at", { ascending: false }),
-    sb.from("deudas").select("*").order("created_at", { ascending: true })
+    sb.from("deudas").select("*").order("created_at", { ascending: true }),
+    sb.from("fondos").select("*").order("created_at", { ascending: true })
   ]);
   if (a.error || b.error) { toast("No se pudieron cargar tus datos."); console.error(a.error || b.error); return; }
   movs = a.data.map(m => ({ ...m, monto: Number(m.monto) }));
   deudas = b.data.map(d => ({ ...d, total: Number(d.total), pagado: Number(d.pagado) }));
+  fondosOk = !c.error;
+  if (c.error) console.error(c.error);
+  fondos = (c.data || []).map(f => ({ ...f, saldo: Number(f.saldo), meta: f.meta == null ? null : Number(f.meta) }));
   loaded = true;
   render();
+}
+
+/* Gasto mensual promedio: egresos de los 3 meses completos anteriores (sin contar lo que mandas a ahorro).
+   Si todavía no hay meses completos con datos, usa lo que llevas del mes actual. */
+function gastoMensual() {
+  const now = new Date(), prev = [];
+  for (let i = 1; i <= 3; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); prev.push(d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0")); }
+  const gasto = k => movs.filter(m => m.tipo === "egreso" && m.categoria !== "Ahorro" && ym(m.fecha) === k).reduce((s, m) => s + m.monto, 0);
+  const conDatos = prev.map(gasto).filter(v => v > 0);
+  if (conDatos.length) return { valor: conDatos.reduce((s, v) => s + v, 0) / conDatos.length, base: conDatos.length + (conDatos.length === 1 ? " mes" : " meses") };
+  const actual = gasto(ym(todayISO()));
+  return { valor: actual, base: actual > 0 ? "este mes" : "" };
 }
 
 /* ---------- Acceso ---------- */
@@ -125,7 +141,9 @@ function render() {
   $("#s-in").textContent = money(sum(delMes, "ingreso"));
   $("#s-out").textContent = money(sum(delMes, "egreso"));
   $("#s-debt").textContent = money(dTot - dPaid);
+  $("#s-fondos").textContent = money(fondos.reduce((s, f) => s + f.saldo, 0));
   $("#d-total").textContent = money(dTot); $("#d-paid").textContent = money(dPaid); $("#d-left").textContent = money(dTot - dPaid);
+  renderFondos();
 
   const rec = movs.slice(0, 6);
   $("#recent").innerHTML = !loaded ? `<div class="empty">Cargando…</div>` : rec.length ? `<ul class="list">${rec.map(rowHTML).join("")}</ul>` : emptyMovs("Todavía no hay movimientos");
@@ -143,6 +161,71 @@ function render() {
 
   renderDebts(now);
   renderChart(now);
+}
+
+function renderFondos() {
+  const g = gastoMensual();
+  const total = fondos.reduce((s, f) => s + f.saldo, 0);
+  const emerg = fondos.find(f => f.es_emergencia);
+  const meses = emerg && g.valor > 0 ? emerg.saldo / g.valor : null;
+  const fmtMeses = v => v.toLocaleString("es-MX", { maximumFractionDigits: 1 });
+
+  $("#f-total").textContent = money(total);
+  $("#f-gasto").textContent = g.valor > 0 ? money(g.valor) : "—";
+  $("#f-meses").textContent = meses == null ? "—" : fmtMeses(meses);
+
+  // Tarjeta del fondo de emergencia en el resumen
+  const eb = $("#emerg-block");
+  if (!loaded || !fondosOk) { eb.innerHTML = ""; }
+  else if (!emerg) {
+    eb.innerHTML = `<div class="panel emerg"><div class="emerg-top"><h2>Fondo de emergencia</h2></div>
+      <p class="muted">Aún no tienes uno registrado. Lo recomendable es juntar entre 3 y 6 meses de tus gastos para imprevistos.</p>
+      <div><button class="btn sm" data-open="fondo" data-emerg="1">+ Crear fondo de emergencia</button></div></div>`;
+  } else {
+    const tope = 6, pct = meses == null ? 0 : Math.min(meses / tope, 1) * 100;
+    const msg = meses == null ? "Registra tus egresos para calcular cuántos meses cubre."
+      : meses < 1 ? "Todavía no cubre un mes de gastos. Cada aportación cuenta."
+      : meses < 3 ? "Buen inicio. La meta mínima recomendada es de 3 meses."
+      : meses < 6 ? "Ya cubres el mínimo de 3 meses. El siguiente objetivo son 6."
+      : "Cubres 6 meses o más de gastos. Estás bien protegido.";
+    eb.innerHTML = `<div class="panel emerg">
+      <div class="emerg-top"><h2>${esc(emerg.nombre)}</h2><span class="num muted">${money(emerg.saldo)}</span></div>
+      <div class="big2 num">${meses == null ? "—" : fmtMeses(meses) + (Math.abs(meses - 1) < 0.05 ? " mes" : " meses")}</div>
+      <div class="meter ${meses != null && meses >= 3 ? "ok" : ""}" role="progressbar" aria-valuenow="${meses == null ? 0 : fmtMeses(meses)}" aria-valuemin="0" aria-valuemax="6" aria-label="Meses de gastos cubiertos">
+        <span style="width:${pct}%"></span><i style="left:50%"></i></div>
+      <div class="meter-scale"><span>0</span><span>3 meses</span><span>6+</span></div>
+      <p class="muted">${msg}${g.valor > 0 ? ` Gasto promedio: ${money(g.valor)} al mes (${g.base}).` : ""}</p>
+    </div>`;
+  }
+
+  // Pestaña de fondos
+  const el = $("#fondos");
+  if (!loaded) { el.innerHTML = `<div class="panel empty">Cargando…</div>`; return; }
+  if (!fondosOk) { el.innerHTML = `<div class="panel empty"><strong>Falta crear la tabla de fondos</strong><span>Corre el archivo <code>supabase/fondos.sql</code> en el SQL Editor de Supabase y recarga la app.</span></div>`; return; }
+  if (!fondos.length) { el.innerHTML = `<div class="panel empty"><strong>Sin fondos todavía</strong><span>Crea tu fondo de emergencia o uno para una meta, como un viaje o un enganche.</span><button class="btn sm" data-open="fondo" data-emerg="1">+ Crear fondo de emergencia</button></div>`; return; }
+
+  const list = [...fondos].sort((a, b) => (b.es_emergencia - a.es_emergencia));
+  el.innerHTML = list.map(f => {
+    const meta = f.meta ?? (f.es_emergencia && g.valor > 0 ? round2(g.valor * 6) : null);
+    const pct = meta ? Math.min(Math.round(f.saldo / meta * 100), 100) : null;
+    const id = esc(f.id);
+    return `<article class="debt">
+      <div class="debt-top"><div><h3>${esc(f.nombre)}</h3></div>
+        ${f.es_emergencia ? `<span class="pill emerg">Emergencia</span>` : pct === 100 ? `<span class="pill ok">Meta cumplida</span>` : ""}</div>
+      <div class="big2 num">${money(f.saldo)}</div>
+      ${meta ? `<div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>
+      <div class="debt-nums muted"><span>${pct}% de la meta</span><span>Meta <b class="num">${money(meta)}</b>${f.meta == null ? " (6 meses de gasto)" : ""}</span></div>` : ""}
+      <form class="fondo-actions" data-fondo="${id}">
+        <input type="number" id="fm-${id}" step="0.01" min="0" inputmode="decimal" placeholder="Monto" aria-label="Monto">
+        <button class="btn sm" type="submit" data-accion="aportar">Aportar</button>
+        <button class="btn sm ghost" type="submit" data-accion="retirar">Retirar</button>
+      </form>
+      <div class="fondo-foot">
+        <label class="chk-row muted"><input type="checkbox" id="fchk-${id}" checked> Reflejarlo en mi balance</label>
+        <button class="del" data-del-fondo="${id}">Eliminar fondo</button>
+      </div>
+    </article>`;
+  }).join("");
 }
 
 function renderDebts(now) {
@@ -212,7 +295,7 @@ function renderChart(now) {
 function setTab(t) {
   tab = t;
   document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
-  ["resumen", "movs", "deudas"].forEach(k => $("#tab-" + k).hidden = k !== t);
+  ["resumen", "movs", "fondos", "deudas"].forEach(k => $("#tab-" + k).hidden = k !== t);
   window.scrollTo(0, 0);
 }
 document.querySelectorAll("nav.tabs button").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
@@ -222,15 +305,22 @@ function setTipo(t) {
   document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === t));
   $("#m-cat").innerHTML = CATS[t].map(c => `<option>${c}</option>`).join("");
 }
-function openSheet(kind) {
+function openSheet(kind, opts = {}) {
   if (kind === "mov") { setTipo(tipoNuevo); $("#m-fecha").value = todayISO(); $("#m-err").textContent = ""; $("#sheet-mov").hidden = false; setTimeout(() => $("#m-monto").focus(), 50); }
+  else if (kind === "fondo") {
+    const emerg = !!opts.emerg || !fondos.some(f => f.es_emergencia) && !fondos.length;
+    $("#fo-err").textContent = "";
+    $("#fo-emerg").checked = emerg;
+    if (emerg && !$("#fo-nombre").value) $("#fo-nombre").value = "Fondo de emergencia";
+    $("#sheet-fondo").hidden = false; setTimeout(() => $("#fo-nombre").focus(), 50);
+  }
   else { $("#d-err").textContent = ""; $("#sheet-deuda").hidden = false; setTimeout(() => $("#d-acreedor").focus(), 50); }
 }
-function closeSheets() { $("#sheet-mov").hidden = true; $("#sheet-deuda").hidden = true; }
+function closeSheets() { $("#sheet-mov").hidden = true; $("#sheet-deuda").hidden = true; $("#sheet-fondo").hidden = true; }
 document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setTipo(b.dataset.v)));
 document.querySelectorAll(".sheet-bg").forEach(bg => bg.addEventListener("click", e => { if (e.target === bg) closeSheets(); }));
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheets(); });
-$("#fab").addEventListener("click", () => openSheet(tab === "deudas" ? "deuda" : "mov"));
+$("#fab").addEventListener("click", () => openSheet(tab === "deudas" ? "deuda" : tab === "fondos" ? "fondo" : "mov"));
 
 /* ---------- Guardar ---------- */
 $("#form-mov").addEventListener("submit", async e => {
@@ -259,28 +349,73 @@ $("#form-deuda").addEventListener("submit", async e => {
   cargar();
 });
 
+$("#form-fondo").addEventListener("submit", async e => {
+  e.preventDefault();
+  const nombre = $("#fo-nombre").value.trim();
+  const saldo = round2(parseFloat($("#fo-saldo").value) || 0);
+  const metaTxt = $("#fo-meta").value, meta = metaTxt ? round2(parseFloat(metaTxt)) : null;
+  const es_emergencia = $("#fo-emerg").checked;
+  if (!nombre) { $("#fo-err").textContent = "Ponle un nombre al fondo."; return; }
+  if (saldo < 0) { $("#fo-err").textContent = "El saldo no puede ser negativo."; return; }
+  if (meta !== null && !(meta > 0)) { $("#fo-err").textContent = "La meta debe ser mayor a cero, o déjala vacía."; return; }
+  closeSheets(); ["#fo-nombre", "#fo-saldo", "#fo-meta"].forEach(s => $(s).value = "");
+  if (es_emergencia) {
+    const prev = fondos.find(f => f.es_emergencia);
+    if (prev) { const r = await sb.from("fondos").update({ es_emergencia: false }).eq("id", prev.id); if (r.error) return fail(r.error); }
+  }
+  const { error } = await sb.from("fondos").insert({ nombre, saldo, meta, es_emergencia });
+  if (error) return fail(error);
+  toast("Fondo guardado");
+  cargar();
+});
+
 document.addEventListener("click", async e => {
-  const o = e.target.closest("[data-open]"); if (o) { openSheet(o.dataset.open); return; }
+  const o = e.target.closest("[data-open]"); if (o) { openSheet(o.dataset.open, { emerg: o.dataset.emerg === "1" }); return; }
   if (e.target.closest("[data-close]")) { closeSheets(); return; }
   const g = e.target.closest("[data-goto]"); if (g) { setTab(g.dataset.goto); return; }
   const c = e.target.closest(".chip[data-f]");
   if (c) { filtroTipo = c.dataset.f; document.querySelectorAll(".chip[data-f]").forEach(x => x.setAttribute("aria-pressed", x === c)); render(); return; }
-  const dm = e.target.closest("[data-del-mov],[data-del-deuda]");
+  const dm = e.target.closest("[data-del-mov],[data-del-deuda],[data-del-fondo]");
   if (dm) {
     if (!dm.classList.contains("confirm")) {
-      document.querySelectorAll(".del.confirm").forEach(x => { x.classList.remove("confirm"); x.textContent = x.dataset.delDeuda ? "Eliminar deuda" : "Eliminar"; });
+      document.querySelectorAll(".del.confirm").forEach(x => { x.classList.remove("confirm"); x.textContent = x.dataset.delDeuda ? "Eliminar deuda" : x.dataset.delFondo ? "Eliminar fondo" : "Eliminar"; });
       dm.classList.add("confirm"); dm.textContent = "¿Seguro? Toca otra vez"; return;
     }
-    const esMov = !!dm.dataset.delMov;
-    const { error } = await sb.from(esMov ? "movimientos" : "deudas").delete().eq("id", esMov ? dm.dataset.delMov : dm.dataset.delDeuda);
+    const [tabla, id, msg] = dm.dataset.delMov ? ["movimientos", dm.dataset.delMov, "Movimiento eliminado"]
+      : dm.dataset.delDeuda ? ["deudas", dm.dataset.delDeuda, "Deuda eliminada"]
+      : ["fondos", dm.dataset.delFondo, "Fondo eliminado"];
+    const { error } = await sb.from(tabla).delete().eq("id", id);
     if (error) return fail(error);
-    toast(esMov ? "Movimiento eliminado" : "Deuda eliminada");
+    toast(msg);
     cargar();
   }
 });
 $("#f-mes").addEventListener("change", e => { filtroMes = e.target.value; render(); });
 
 document.addEventListener("submit", async e => {
+  const ff = e.target.closest("[data-fondo]");
+  if (ff) {
+    e.preventDefault();
+    const fo = fondos.find(x => x.id === ff.dataset.fondo); if (!fo) return;
+    const accion = e.submitter?.dataset.accion || "aportar";
+    const v = round2(parseFloat(ff.querySelector("input[type=number]").value));
+    if (!(v > 0)) { toast("Escribe el monto"); return; }
+    if (accion === "retirar" && v > fo.saldo) { toast("No puedes retirar más de " + money(fo.saldo)); return; }
+    const nuevo = round2(accion === "aportar" ? fo.saldo + v : fo.saldo - v);
+    const enBalance = ff.parentElement.querySelector("#fchk-" + CSS.escape(fo.id)).checked;
+    const up = await sb.from("fondos").update({ saldo: nuevo }).eq("id", fo.id);
+    if (up.error) return fail(up.error);
+    if (enBalance) {
+      const mov = accion === "aportar"
+        ? { tipo: "egreso", monto: v, concepto: "Aportación a " + fo.nombre, categoria: "Ahorro", fecha: todayISO() }
+        : { tipo: "ingreso", monto: v, concepto: "Retiro de " + fo.nombre, categoria: "Retiro de fondo", fecha: todayISO() };
+      const ins = await sb.from("movimientos").insert(mov);
+      if (ins.error) fail(ins.error);
+    }
+    toast((accion === "aportar" ? "Aportación de " : "Retiro de ") + money(v) + " registrado");
+    cargar();
+    return;
+  }
   const f = e.target.closest("[data-abono]"); if (!f) return;
   e.preventDefault();
   const d = deudas.find(x => x.id === f.dataset.abono); if (!d) return;

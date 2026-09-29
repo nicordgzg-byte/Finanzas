@@ -48,6 +48,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resumen</button>
       <button role="tab" data-tab="movs" aria-selected="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>Movimientos</button>
+      <button role="tab" data-tab="fondos" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>Fondos</button>
       <button role="tab" data-tab="deudas" aria-selected="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Deudas</button>
     </nav>
@@ -62,8 +64,11 @@
     <div class="stats">
       <div class="stat"><span class="label">Ingresos del mes</span><span class="v num pos" id="s-in">$0.00</span></div>
       <div class="stat"><span class="label">Egresos del mes</span><span class="v num neg" id="s-out">$0.00</span></div>
+      <div class="stat"><span class="label">Ahorrado en fondos</span><span class="v num" id="s-fondos">$0.00</span></div>
       <div class="stat"><span class="label">Deuda pendiente</span><span class="v num warn" id="s-debt">$0.00</span></div>
     </div>
+
+    <section class="block" id="emerg-block"></section>
 
     <section class="block">
       <div class="block-head"><h2>Últimos 6 meses</h2></div>
@@ -94,6 +99,16 @@
       <select class="chip" id="f-mes" aria-label="Mes"></select>
     </div>
     <div class="panel" id="all-movs"></div>
+  </main>
+
+  <main id="tab-fondos" hidden>
+    <div class="block-head"><h2>Fondos</h2><button class="btn sm desk-add" data-open="fondo">+ Nuevo fondo</button></div>
+    <div class="stats stats-top">
+      <div class="stat"><span class="label">Total ahorrado</span><span class="v num pos" id="f-total">$0.00</span></div>
+      <div class="stat"><span class="label">Gasto mensual promedio</span><span class="v num" id="f-gasto">$0.00</span></div>
+      <div class="stat"><span class="label">Meses cubiertos</span><span class="v num" id="f-meses">—</span></div>
+    </div>
+    <div class="debts" id="fondos"></div>
   </main>
 
   <main id="tab-deudas" hidden>
@@ -144,6 +159,22 @@
     <label class="field"><span>Nota (opcional)</span><input type="text" id="d-nota" maxlength="120" placeholder="Ej. Pago mínimo el día 15"></label>
     <div class="err" id="d-err"></div>
     <button class="btn" type="submit">Guardar deuda</button>
+  </form>
+</div>
+
+<!-- Hoja: fondo -->
+<div class="sheet-bg" id="sheet-fondo" hidden>
+  <form class="sheet" id="form-fondo" novalidate>
+    <div class="sheet-head"><h2>Nuevo fondo</h2><button type="button" class="x" data-close aria-label="Cerrar">×</button></div>
+    <label class="field"><span>Nombre</span><input type="text" id="fo-nombre" maxlength="60" placeholder="Ej. Fondo de emergencia, Viaje, Enganche"></label>
+    <div class="row2">
+      <label class="field"><span>Saldo actual (MXN)</span><input type="number" id="fo-saldo" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></label>
+      <label class="field"><span>Meta (opcional)</span><input type="number" id="fo-meta" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></label>
+    </div>
+    <label class="chk-row"><input type="checkbox" id="fo-emerg"> Es mi fondo de emergencia</label>
+    <p class="hint muted" id="fo-hint">Si no pones meta, la app te sugiere cubrir 6 meses de tus gastos.</p>
+    <div class="err" id="fo-err"></div>
+    <button class="btn" type="submit">Guardar fondo</button>
   </form>
 </div>
 
