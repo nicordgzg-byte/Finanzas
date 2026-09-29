@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mis Finanzas</title>
+<meta name="theme-color" content="#1E4F74" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1614" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Finanzas">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<!-- ACCESO -->
+<section id="auth" class="auth" hidden>
+  <form class="auth-card" id="form-auth" novalidate>
+    <div class="brand"><img src="/icons/icon.svg" alt="" width="44" height="44"><h1>Mis Finanzas</h1></div>
+    <p class="muted" id="auth-sub">Entra con tu correo para ver tus finanzas.</p>
+    <label class="field"><span>Correo</span><input type="email" id="a-email" autocomplete="email" required></label>
+    <label class="field"><span>Contraseña</span><input type="password" id="a-pass" autocomplete="current-password" minlength="6" required></label>
+    <div class="err" id="a-err"></div>
+    <button class="btn" type="submit" id="a-btn">Entrar</button>
+    <button class="linkbtn" type="button" id="a-toggle">¿Primera vez? Crea tu cuenta</button>
+  </form>
+</section>
+
+<div class="notice wrap" id="config-notice" hidden>Falta configurar Supabase: escribe la URL y la anon key de tu proyecto en <code>config.js</code>.</div>
+
+<!-- APP -->
+<div id="app" hidden>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Mis Finanzas</h1>
+      <div class="today muted" id="today"></div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button role="tab" data-tab="resumen" aria-selected="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Resumen</button>
+      <button role="tab" data-tab="movs" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>Movimientos</button>
+      <button role="tab" data-tab="deudas" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Deudas</button>
+    </nav>
+  </header>
+
+  <main id="tab-resumen">
+    <div class="hero">
+      <span class="label">Balance actual</span>
+      <span class="big num" id="balance">$0.00</span>
+      <span class="sub" id="balance-sub">Cargando tus datos…</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="label">Ingresos del mes</span><span class="v num pos" id="s-in">$0.00</span></div>
+      <div class="stat"><span class="label">Egresos del mes</span><span class="v num neg" id="s-out">$0.00</span></div>
+      <div class="stat"><span class="label">Deuda pendiente</span><span class="v num warn" id="s-debt">$0.00</span></div>
+    </div>
+
+    <section class="block">
+      <div class="block-head"><h2>Últimos 6 meses</h2></div>
+      <div class="panel">
+        <div class="chart-wrap" id="chart"></div>
+        <div class="legend"><span><i class="sw-pos"></i>Ingresos</span><span><i class="sw-neg"></i>Egresos</span></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>Movimientos recientes</h2>
+        <div class="head-actions">
+          <button class="btn sm desk-add" data-open="mov">+ Registrar movimiento</button>
+          <button class="linkbtn" data-goto="movs">Ver todos</button>
+        </div>
+      </div>
+      <div class="panel" id="recent"></div>
+    </section>
+  </main>
+
+  <main id="tab-movs" hidden>
+    <div class="block-head"><h2>Movimientos</h2><button class="btn sm desk-add" data-open="mov">+ Registrar movimiento</button></div>
+    <div class="filters">
+      <button class="chip" data-f="todos" aria-pressed="true">Todos</button>
+      <button class="chip" data-f="ingreso" aria-pressed="false">Ingresos</button>
+      <button class="chip" data-f="egreso" aria-pressed="false">Egresos</button>
+      <select class="chip" id="f-mes" aria-label="Mes"></select>
+    </div>
+    <div class="panel" id="all-movs"></div>
+  </main>
+
+  <main id="tab-deudas" hidden>
+    <div class="block-head"><h2>Deudas</h2><button class="btn sm desk-add" data-open="deuda">+ Nueva deuda</button></div>
+    <div class="stats stats-top">
+      <div class="stat"><span class="label">Total adeudado</span><span class="v num" id="d-total">$0.00</span></div>
+      <div class="stat"><span class="label">Pagado</span><span class="v num pos" id="d-paid">$0.00</span></div>
+      <div class="stat"><span class="label">Pendiente</span><span class="v num warn" id="d-left">$0.00</span></div>
+    </div>
+    <div class="debts" id="debts"></div>
+  </main>
+
+  <footer class="foot muted"><span id="who"></span> · <button class="linkbtn" id="logout">Cerrar sesión</button></footer>
+</div>
+
+<button class="fab" id="fab" aria-label="Agregar">+</button>
+</div>
+
+<!-- Hoja: movimiento -->
+<div class="sheet-bg" id="sheet-mov" hidden>
+  <form class="sheet" id="form-mov" novalidate>
+    <div class="sheet-head"><h2>Registrar movimiento</h2><button type="button" class="x" data-close aria-label="Cerrar">×</button></div>
+    <div class="seg" role="group" aria-label="Tipo">
+      <button type="button" data-v="ingreso" aria-pressed="false">Ingreso</button>
+      <button type="button" data-v="egreso" aria-pressed="true">Egreso</button>
+    </div>
+    <label class="field"><span>Monto (MXN)</span><input type="number" id="m-monto" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></label>
+    <label class="field"><span>Concepto</span><input type="text" id="m-concepto" maxlength="80" placeholder="Ej. Súper, renta, sueldo"></label>
+    <div class="row2">
+      <label class="field"><span>Categoría</span><select class="inp" id="m-cat"></select></label>
+      <label class="field"><span>Fecha</span><input type="date" id="m-fecha"></label>
+    </div>
+    <div class="err" id="m-err"></div>
+    <button class="btn" type="submit">Guardar movimiento</button>
+  </form>
+</div>
+
+<!-- Hoja: deuda -->
+<div class="sheet-bg" id="sheet-deuda" hidden>
+  <form class="sheet" id="form-deuda" novalidate>
+    <div class="sheet-head"><h2>Nueva deuda</h2><button type="button" class="x" data-close aria-label="Cerrar">×</button></div>
+    <label class="field"><span>¿A quién le debes?</span><input type="text" id="d-acreedor" maxlength="60" placeholder="Ej. Tarjeta BBVA, préstamo de Juan"></label>
+    <div class="row2">
+      <label class="field"><span>Monto total (MXN)</span><input type="number" id="d-monto" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></label>
+      <label class="field"><span>Ya pagado (opcional)</span><input type="number" id="d-pagado" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></label>
+    </div>
+    <label class="field"><span>Fecha límite (opcional)</span><input type="date" id="d-fecha"></label>
+    <label class="field"><span>Nota (opcional)</span><input type="text" id="d-nota" maxlength="120" placeholder="Ej. Pago mínimo el día 15"></label>
+    <div class="err" id="d-err"></div>
+    <button class="btn" type="submit">Guardar deuda</button>
+  </form>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="/config.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
